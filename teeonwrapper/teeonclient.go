@@ -78,6 +78,7 @@ func (toc *TeeOnClient) TeeOnSnipeTime(teeTime time.Time) error {
 
 	form := url.Values{}
 	form.Set(fmt.Sprintf("%d-0", unixT), "Tyler Fancy")
+	form.Set(fmt.Sprintf("%d-1", unixT), "Member")
 	form.Set(fmt.Sprintf("%d-2", unixT), "Member")
 	form.Set(fmt.Sprintf("%d-3", unixT), "Member")
 	form.Set("BackTarget", "com.teeon.teesheet.servlets.golfersection.WebBookingPlayerEntry")
@@ -123,12 +124,12 @@ func (toc *TeeOnClient) TeeOnSnipeTime(teeTime time.Time) error {
 	}
 
 	defer resp.Body.Close()
-	_, err = scanResponseForBadSnipeResults(resp.Body)
+	_, err = scanResponseForSnipeMiss(resp.Body)
 
 	return nil
 }
 
-func scanResponseForBadSnipeResults(r io.Reader) (bool, error) {
+func scanResponseForSnipeMiss(r io.Reader) (bool, error) {
 	tooEarly, _ := regexp.Compile("You must wai[l-t]")
 	notAvailable, _ := regexp.Compile("booking you requested is no longer available")
 
@@ -136,7 +137,7 @@ func scanResponseForBadSnipeResults(r io.Reader) (bool, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if debug {
-			fmt.Printf("Line: %s\n", line)
+			fmt.Printf("[sRFSM]: %s\n", line)
 		}
 		if tooEarly.FindString(line) != "" {
 			return true, nil

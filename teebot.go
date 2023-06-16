@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
-	"pkfiyah/tee1000/teeonwrapper"
 	"time"
+
+	"github.com/pkfiyah/tee1000/api"
+	"github.com/pkfiyah/tee1000/teeonwrapper"
 )
 
 func main() {
@@ -17,8 +19,10 @@ func main() {
 		fmt.Printf("Err signing in to TeeOn via client")
 	}
 
-	err = client.TeeOnSnipeTime(time.Date(2023, 06, 21, 8, 0, 0, 0, time.Local))
+	err = client.TeeOnSnipeTime(time.Date(2023, 06, 21, 4, 0, 0, 0, time.Local))
 	if err != nil {
 		fmt.Printf("Err requesting tee time to TeeOn via client: %s", err)
 	}
+
+	api.HandleRequests()
 }

@@ -1,0 +1,9 @@
+services:
+  teebot:
+    build: 
+      dockerfile: Dockerfile
+      context: .
+    ports: 
+      - "9001:9001"
+  redis:
+    image: "redis:alpine"
