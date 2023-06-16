@@ -7,3 +7,5 @@ services:
       - "9001:9001"
   redis:
     image: "redis:alpine"
+    volumes:
+      - ./redis_data:/data

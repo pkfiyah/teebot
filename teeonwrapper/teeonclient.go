@@ -11,11 +11,14 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type TeeOnClient struct {
 	client *http.Client
 	jar    *cookiejar.Jar
+	redis  *redis.Client
 	name   string
 }
 
@@ -25,6 +28,11 @@ const teeOnTeeTimeUrl string = "https://www.tee-on.com/PubGolf/servlet/com.teeon
 const debug bool = true
 
 func NewTeeOnClient() (*TeeOnClient, error) {
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
 	toClient := TeeOnClient{}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -34,7 +42,7 @@ func NewTeeOnClient() (*TeeOnClient, error) {
 	toClient.client = &http.Client{
 		Jar: jar,
 	}
-
+	toClient.redis = redisClient
 	toClient.name = "test"
 
 	return &toClient, nil
