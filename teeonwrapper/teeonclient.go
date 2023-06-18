@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkfiyah/tee1000/models"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -25,7 +26,7 @@ type TeeOnClient struct {
 const teeOnSignInUrl string = "https://www.tee-on.com/PubGolf/servlet/com.teeon.teesheet.servlets.ajax.CheckSignInCloudAjax"
 const teeOnTeeTimeUrl string = "https://www.tee-on.com/PubGolf/servlet/com.teeon.teesheet.servlets.golfersection.WebBookingBookTime"
 
-const debug bool = true
+const debug bool = false
 
 func NewTeeOnClient() (*TeeOnClient, error) {
 	redisClient := redis.NewClient(&redis.Options{
@@ -71,68 +72,134 @@ func (toc *TeeOnClient) TeeOnSignIn() error {
 	return nil
 }
 
-func (toc *TeeOnClient) TeeOnSnipeTime(teeTime time.Time) error {
+func (toc *TeeOnClient) TeeOnSnipeTime(teeTime *models.TeeTime) error {
 	// timestamping request
 	nowTime := time.Now()
 	unixT := nowTime.UnixMilli()
 
-	// get tee time in way request wants it
-	formatTeeTime := teeTime.Format("2006-01-02;15:04")
-
-	parts := strings.Split(formatTeeTime, ";")
-	if len(parts) != 2 {
-		return errors.New("Request time could not be parsed properly into a tee time")
-	}
-
-	form := url.Values{}
-	form.Set(fmt.Sprintf("%d-0", unixT), "Tyler Fancy")
-	form.Set(fmt.Sprintf("%d-1", unixT), "Member")
-	form.Set(fmt.Sprintf("%d-2", unixT), "Member")
-	form.Set(fmt.Sprintf("%d-3", unixT), "Member")
-	form.Set("BackTarget", "com.teeon.teesheet.servlets.golfersection.WebBookingPlayerEntry")
-	form.Set("CaptureCreditBluff", "false")
-	form.Set("CaptureCreditMoneris", "false")
-	form.Set("Carts", "0")
-	form.Set("CourseCode", "AVON")
-	form.Set("Date", parts[0])
-	form.Set("FromSpecials", "false")
-	form.Set("Holes", "18")
-	form.Set("LockerString", "Tyler Fancy (PUB281288)1|0")
-	form.Set("Name0", "Tyler Fancy")
-	form.Set("Name1", "Member")
-	form.Set("Name2", "Member")
-	form.Set("Name3", "Member")
-	form.Set("NineCode", "F")
-	form.Set("PlayerID0", "AVON3971")
-	form.Set("PlayerID1", "")
-	form.Set("PlayerID2", "")
-	form.Set("PlayerID3", "")
-	form.Set("Players", "4")
-	form.Set("Referrer", "avonvalleygolf.com")
-	form.Set("Ride0", "false")
-	form.Set("Ride1", "false")
-	form.Set("Ride2", "false")
-	form.Set("Ride3", "false")
-	form.Set("ShotgunID", "")
-	form.Set("Time", parts[1])
-	form.Set("UnlockTime", fmt.Sprintf("AVON|F|%s|%s|B|10:03|99", parts[0], parts[1]))
-
-	req, err := http.NewRequest("POST", teeOnTeeTimeUrl, strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := toc.client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		if resp.StatusCode != 200 {
-			err = fmt.Errorf("Non 200 response occured: %d:%s", resp.StatusCode, resp.Body)
+	for _, time := range teeTime.TimesToSnipe {
+		formatTeeTime := time.Format("2006-01-02;15:04")
+		fmt.Printf("Attempting time: %s\n", formatTeeTime)
+		parts := strings.Split(formatTeeTime, ";")
+		if len(parts) != 2 {
+			return errors.New("Request time could not be parsed properly into a tee time")
 		}
-		return fmt.Errorf("Error occured while booking tee time or received non-200 response: %s", err)
-	}
 
-	defer resp.Body.Close()
-	_, err = scanResponseForSnipeMiss(resp.Body)
+		form := url.Values{}
+
+		form.Set(fmt.Sprintf("%d-0", unixT), "Tyler Fancy")
+		for i := 1; i < int(teeTime.NumPlayers); i++ {
+			form.Set(fmt.Sprintf("%d-%d", unixT, i), "Member")
+		}
+		form.Set("BackTarget", "com.teeon.teesheet.servlets.golfersection.WebBookingPlayerEntry")
+		form.Set("CaptureCreditBluff", "false")
+		form.Set("CaptureCreditMoneris", "false")
+		form.Set("Carts", fmt.Sprintf("%d", teeTime.NumCarts))
+		form.Set("CourseCode", "AVON")
+		form.Set("Date", parts[0])
+		form.Set("FromSpecials", "false")
+		form.Set("Holes", "18")
+		form.Set("LockerString", "Tyler Fancy (PUB281288)1|0")
+		form.Set("Name0", "Tyler Fancy")
+		form.Set("Name1", "Member")
+		form.Set("Name2", "Member")
+		form.Set("Name3", "Member")
+		form.Set("NineCode", "F")
+		form.Set("PlayerID0", "AVON3971")
+		form.Set("PlayerID1", "")
+		form.Set("PlayerID2", "")
+		form.Set("PlayerID3", "")
+		form.Set("Players", "4")
+		form.Set("Referrer", "avonvalleygolf.com")
+		form.Set("Ride0", "false")
+		form.Set("Ride1", "false")
+		form.Set("Ride2", "false")
+		form.Set("Ride3", "false")
+		form.Set("ShotgunID", "")
+		form.Set("Time", parts[1])
+		form.Set("UnlockTime", fmt.Sprintf("AVON|F|%s|%s|B|10:03|99", parts[0], parts[1]))
+
+		req, err := http.NewRequest("POST", teeOnTeeTimeUrl, strings.NewReader(form.Encode()))
+		if err != nil {
+			return err
+		}
+
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := toc.client.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			if resp.StatusCode != 200 {
+				err = fmt.Errorf("Non 200 response occured: %d:%s", resp.StatusCode, resp.Body)
+			}
+			return fmt.Errorf("Error occured while booking tee time or received non-200 response: %s", err)
+		}
+
+		defer resp.Body.Close()
+		_, err = scanResponseForSnipeMiss(resp.Body)
+
+		if err != nil {
+			fmt.Printf("Err Occ: %s\n", err)
+			continue
+		}
+
+		return nil
+	}
+	// get tee time in way request wants it
+	// formatTeeTime := teeTime.TimeToSnipe.Format("2006-01-02;15:04")
+
+	// parts := strings.Split(formatTeeTime, ";")
+	// if len(parts) != 2 {
+	// 	return errors.New("Request time could not be parsed properly into a tee time")
+	// }
+
+	// form := url.Values{}
+	// form.Set(fmt.Sprintf("%d-0", unixT), "Tyler Fancy")
+	// form.Set(fmt.Sprintf("%d-1", unixT), "Member")
+	// form.Set(fmt.Sprintf("%d-2", unixT), "Member")
+	// form.Set(fmt.Sprintf("%d-3", unixT), "Member")
+	// form.Set("BackTarget", "com.teeon.teesheet.servlets.golfersection.WebBookingPlayerEntry")
+	// form.Set("CaptureCreditBluff", "false")
+	// form.Set("CaptureCreditMoneris", "false")
+	// form.Set("Carts", "0")
+	// form.Set("CourseCode", "AVON")
+	// form.Set("Date", parts[0])
+	// form.Set("FromSpecials", "false")
+	// form.Set("Holes", "18")
+	// form.Set("LockerString", "Tyler Fancy (PUB281288)1|0")
+	// form.Set("Name0", "Tyler Fancy")
+	// form.Set("Name1", "Member")
+	// form.Set("Name2", "Member")
+	// form.Set("Name3", "Member")
+	// form.Set("NineCode", "F")
+	// form.Set("PlayerID0", "AVON3971")
+	// form.Set("PlayerID1", "")
+	// form.Set("PlayerID2", "")
+	// form.Set("PlayerID3", "")
+	// form.Set("Players", "4")
+	// form.Set("Referrer", "avonvalleygolf.com")
+	// form.Set("Ride0", "false")
+	// form.Set("Ride1", "false")
+	// form.Set("Ride2", "false")
+	// form.Set("Ride3", "false")
+	// form.Set("ShotgunID", "")
+	// form.Set("Time", parts[1])
+	// form.Set("UnlockTime", fmt.Sprintf("AVON|F|%s|%s|B|10:03|99", parts[0], parts[1]))
+
+	// req, err := http.NewRequest("POST", teeOnTeeTimeUrl, strings.NewReader(form.Encode()))
+	// if err != nil {
+	// 	return err
+	// }
+
+	// req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	// resp, err := toc.client.Do(req)
+	// if err != nil || resp.StatusCode != 200 {
+	// 	if resp.StatusCode != 200 {
+	// 		err = fmt.Errorf("Non 200 response occured: %d:%s", resp.StatusCode, resp.Body)
+	// 	}
+	// 	return fmt.Errorf("Error occured while booking tee time or received non-200 response: %s", err)
+	// }
+
+	// defer resp.Body.Close()
+	// _, err = scanResponseForSnipeMiss(resp.Body)
 
 	return nil
 }
@@ -148,10 +215,10 @@ func scanResponseForSnipeMiss(r io.Reader) (bool, error) {
 			fmt.Printf("[sRFSM]: %s\n", line)
 		}
 		if tooEarly.FindString(line) != "" {
-			return true, nil
+			return true, errors.New("Request too early, must wait for unlock")
 		}
 		if notAvailable.FindString(line) != "" {
-			return true, nil
+			return true, errors.New("Booking not available")
 		}
 	}
 
