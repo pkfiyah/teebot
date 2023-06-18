@@ -36,19 +36,21 @@ func snipeTeeTime() {
 	}
 
 	times := []time.Time{
-		time.Date(2023, 06, 24, 7, 30, 0, 0, time.Local),
-		time.Date(2023, 06, 24, 7, 39, 0, 0, time.Local),
-		time.Date(2023, 06, 24, 7, 48, 0, 0, time.Local),
-		time.Date(2023, 06, 24, 7, 57, 0, 0, time.Local),
-		time.Date(2023, 06, 24, 8, 06, 0, 0, time.Local),
-		time.Date(2023, 06, 24, 8, 15, 0, 0, time.Local),
-		time.Date(2023, 06, 24, 8, 24, 0, 0, time.Local),
+		time.Date(2023, 06, 23, 6, 54, 0, 0, time.Local),
+		// time.Date(2023, 06, 24, 7, 39, 0, 0, time.Local),
+		// time.Date(2023, 06, 24, 7, 48, 0, 0, time.Local),
+		// time.Date(2023, 06, 24, 7, 57, 0, 0, time.Local),
+		// time.Date(2023, 06, 24, 8, 06, 0, 0, time.Local),
+		// time.Date(2023, 06, 24, 8, 15, 0, 0, time.Local),
+		// time.Date(2023, 06, 24, 8, 24, 0, 0, time.Local),
 	}
 
 	tT := &models.TeeTime{
-		TimesToSnipe: times,
-		NumPlayers:   4,
-		NumCarts:     0,
+		BookingMember: "Tylerfancy",
+		TimesToSnipe:  times,
+		NumPlayers:    4,
+		NumCarts:      0,
+		NumHoles:      18,
 	}
 
 	err = toClient.TeeOnSnipeTime(tT)
