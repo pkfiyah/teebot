@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pkfiyah/tee1000/models"
@@ -32,36 +34,41 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, "Tee Time Accepted")
 	fmt.Println("Adding Tee Time")
 
 	// Parse Values
 	tT := r.FormValue("teeTime")
+	date := strings.Split(tT, ";")[0]
 	parsedTeeTime, err := time.Parse("2006-01-02;15:04", tT)
 	if err != nil {
 		fmt.Printf("Error parsing tee time from request: %s\n", err)
+		return
 	}
 
 	carts := r.FormValue("carts")
 	parsedCarts, err := strconv.ParseUint(carts, 10, 32)
 	if err != nil {
 		fmt.Printf("Error parsing carts from request: %s\n", err)
+		return
 	}
 
 	players := r.FormValue("players")
 	parsedPlayers, err := strconv.ParseUint(players, 10, 32)
 	if err != nil {
 		fmt.Printf("Error parsing players from request: %s\n", err)
+		return
 	}
 
 	holes := r.FormValue("holes")
 	parsedHoles, err := strconv.ParseUint(holes, 10, 32)
 	if err != nil {
 		fmt.Printf("Error parsing holes from request: %s\n", err)
+		return
 	}
 
 	val := models.TeeTime{
 		BookingMember: "Tylerfancy",
+		Date:          date,
 		TimesToSnipe:  []time.Time{parsedTeeTime},
 		NumCarts:      uint(parsedCarts),
 		NumPlayers:    uint(parsedPlayers),
@@ -73,6 +80,8 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Error saving to redis")
 	}
 
+	fmt.Fprintf(w, "Tee Time Accepted")
+
 }
 
 func HandleRequests() {
@@ -83,13 +92,18 @@ func HandleRequests() {
 
 func saveTeeTimeToRedis(r *http.Request, teeTime *models.TeeTime) error {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "teebot-redis-1:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
 
+	// TODO Expire immediately after tee time has passed
 	expTime := time.Until(time.Now().Add(time.Hour * 24 * 7))
-	err := rdb.Set(r.Context(), teeTime.BookingMember, teeTime, expTime).Err()
+	jsonTeeTime, err := json.Marshal(teeTime)
+	if err != nil {
+		return fmt.Errorf("Could not marshal data")
+	}
+	err = rdb.Set(r.Context(), fmt.Sprintf("TeeTime:%s/%s", teeTime.BookingMember, teeTime.Date), jsonTeeTime, expTime).Err()
 	if err != nil {
 		fmt.Printf("Err occurred saving tee time to Redis: %v\n", err)
 	}

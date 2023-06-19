@@ -3,9 +3,19 @@ services:
     build: 
       dockerfile: Dockerfile
       context: .
+    networks:
+      - synlocal
     ports: 
-      - "9001:9001"
+      - 9001:9001
+    depends_on:
+      - redis
   redis:
     image: "redis:alpine"
     volumes:
       - ./redis_data:/data
+    networks:
+      - synlocal
+    ports:
+      - 6379:6379
+networks:
+  synlocal:

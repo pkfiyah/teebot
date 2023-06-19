@@ -4,6 +4,7 @@ import "time"
 
 type TeeTime struct {
 	BookingMember string
+	Date          string
 	TimesToSnipe  []time.Time
 	NumPlayers    uint
 	NumCarts      uint
