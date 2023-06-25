@@ -36,11 +36,20 @@ func StartSnipingDaemon() {
 	}(redClient)
 }
 
+func loadMagazine() {
+	go func() {
+		magazineEmptied := false
+		for !magazineEmptied {
+			snipeTeeTime()
+			time.Sleep(1 * time.Second)
+		}
+	}()
+}
+
 func checkForTeeTimes() {
 	var cursor uint64
 	iter := redClient.Scan(ctx, cursor, "TeeTime:*", 0).Iterator()
 	for iter.Next(ctx) {
-		fmt.Println("keys", iter.Val())
 		res := redClient.Get(ctx, iter.Val())
 		fmt.Printf("Redis Get: %v\n", res)
 	}

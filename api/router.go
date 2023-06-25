@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"github.com/pkfiyah/tee1000/models"
-	"github.com/redis/go-redis/v9"
 )
 
 func health(w http.ResponseWriter, r *http.Request) {
@@ -38,10 +36,15 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 
 	// Parse Values
 	tT := r.FormValue("teeTime")
-	date := strings.Split(tT, ";")[0]
 	parsedTeeTime, err := time.Parse("2006-01-02;15:04", tT)
 	if err != nil {
 		fmt.Printf("Error parsing tee time from request: %s\n", err)
+		return
+	}
+
+	bookingDate := strings.Split(parsedTeeTime.Format("2006-01-02;15:04"), ";")
+	if len(bookingDate) != 2 {
+		fmt.Printf("Error parsing booking time from request")
 		return
 	}
 
@@ -66,18 +69,31 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	val := models.TeeTime{
+	val := &models.TeeTime{
 		BookingMember: "Tylerfancy",
-		Date:          date,
+		BookingDate:   bookingDate[0],
 		TimesToSnipe:  []time.Time{parsedTeeTime},
 		NumCarts:      uint(parsedCarts),
 		NumPlayers:    uint(parsedPlayers),
 		NumHoles:      uint(parsedHoles),
 	}
 
-	err = saveTeeTimeToRedis(r, &val)
+	existingBooking, err := models.GetTeeTimeByBooking(val)
+	if err != nil {
+		fmt.Printf("Error getting existing booking from redis: %s\n", err)
+		return
+	}
+
+	if existingBooking != nil {
+		// Add new time to existing booking instead of creating new booking
+		existingBooking.TimesToSnipe = append(existingBooking.TimesToSnipe, val.TimesToSnipe...)
+		val = existingBooking
+	}
+
+	err = models.SetTeeTimeWithBooking(r, val)
 	if err != nil {
 		fmt.Printf("Error saving to redis")
+		return
 	}
 
 	fmt.Fprintf(w, "Tee Time Accepted")
@@ -88,24 +104,4 @@ func HandleRequests() {
 	http.HandleFunc("/health", health)
 	http.HandleFunc("/addTime", addTeeTime)
 	log.Fatal(http.ListenAndServe(":9001", nil))
-}
-
-func saveTeeTimeToRedis(r *http.Request, teeTime *models.TeeTime) error {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "teebot-redis-1:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
-	// TODO Expire immediately after tee time has passed
-	expTime := time.Until(time.Now().Add(time.Hour * 24 * 7))
-	jsonTeeTime, err := json.Marshal(teeTime)
-	if err != nil {
-		return fmt.Errorf("Could not marshal data")
-	}
-	err = rdb.Set(r.Context(), fmt.Sprintf("TeeTime:%s/%s", teeTime.BookingMember, teeTime.Date), jsonTeeTime, expTime).Err()
-	if err != nil {
-		fmt.Printf("Err occurred saving tee time to Redis: %v\n", err)
-	}
-	return nil
 }
