@@ -76,54 +76,19 @@ func (toc *TeeOnClient) TeeOnSignIn() error {
 	return nil
 }
 
-func (toc *TeeOnClient) TeeOnSnipeTime(teeTime *models.TeeTime) error {
-	// timestamping request
-	nowTime := time.Now()
-	unixT := nowTime.UnixMilli()
+func (toc *TeeOnClient) TeeOnSnipeTime(teeTime *models.TeeTime) (*time.Duration, error) {
+	for _, snipeTime := range teeTime.TimesToSnipe {
 
-	for _, time := range teeTime.TimesToSnipe {
-		formatTeeTime := time.Format("2006-01-02;15:04")
-		fmt.Printf("Attempting time: %s\n", formatTeeTime)
-		parts := strings.Split(formatTeeTime, ";")
-		if len(parts) != 2 {
-			return errors.New("Request time could not be parsed properly into a tee time")
+		form, err := constructForm(teeTime, snipeTime)
+		if err != nil {
+			// Critical Parse Error
+			return nil, err
 		}
-
-		form := url.Values{}
-
-		form.Set(fmt.Sprintf("%d-0", unixT), "Tyler Fancy")
-		for i := 1; i < int(teeTime.NumPlayers); i++ {
-			form.Set(fmt.Sprintf("%d-%d", unixT, i), "Member")
-		}
-		form.Set("BackTarget", "com.teeon.teesheet.servlets.golfersection.WebBookingPlayerEntry")
-		form.Set("CaptureCreditBluff", "false")
-		form.Set("CaptureCreditMoneris", "false")
-		form.Set("Carts", fmt.Sprintf("%d", teeTime.NumCarts))
-		form.Set("CourseCode", "AVON")
-		form.Set("Date", parts[0])
-		form.Set("FromSpecials", "false")
-		form.Set("Holes", fmt.Sprintf("%d", teeTime.NumHoles))
-		form.Set("LockerString", "Tyler Fancy (PUB281288)1|0")
-		form.Set("Name0", "Tyler Fancy")
-		form.Set("PlayerID0", "AVON3971")
-		for i := 1; i < int(teeTime.NumPlayers); i++ {
-			form.Set(fmt.Sprintf("Name%d", i), "Member")
-			form.Set(fmt.Sprintf("PlayerID%d", i), "")
-		}
-		form.Set("NineCode", "F")
-		form.Set("Players", fmt.Sprintf("%d", teeTime.NumPlayers))
-		form.Set("Referrer", "avonvalleygolf.com")
-		form.Set("Ride0", "false")
-		form.Set("Ride1", "false")
-		form.Set("Ride2", "false")
-		form.Set("Ride3", "false") // TODO Handle this based on 12 carts?
-		form.Set("ShotgunID", "")
-		form.Set("Time", parts[1])
-		form.Set("UnlockTime", fmt.Sprintf("AVON|F|%s|%s|B|10:03|99", parts[0], parts[1]))
 
 		req, err := http.NewRequest("POST", teeOnTeeTimeUrl, strings.NewReader(form.Encode()))
 		if err != nil {
-			return err
+			// Critical Http Req Error
+			return nil, err
 		}
 
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -132,25 +97,31 @@ func (toc *TeeOnClient) TeeOnSnipeTime(teeTime *models.TeeTime) error {
 			if resp.StatusCode != 200 {
 				err = fmt.Errorf("Non 200 response occured: %d:%s", resp.StatusCode, resp.Body)
 			}
-			return fmt.Errorf("Error occured while booking tee time or received non-200 response: %s", err)
+			return nil, fmt.Errorf("Error occured while booking tee time or received non-200 response: %s", err)
 		}
 
 		defer resp.Body.Close()
-		_, err = scanResponseForSnipeResult(resp.Body)
-		if err != nil {
-			fmt.Printf("Err Occ: %s\n", err)
-			continue
+		retryIn, err := scanResponseForSnipeResult(resp.Body)
+
+		// Could be done booking, could be just waiting for a retry on the time
+		if retryIn != nil {
+			return retryIn, err
 		}
-		fmt.Printf("No Error, Returning with time sniped")
-		return nil
+
+		if err != nil {
+			fmt.Printf("Err during result scan, continuing to next time?: %s\n", err)
+			if err == ErrTooEarlyToRegisterTeeTime || err == ErrTeeTimeAlreadyBooked {
+				return nil, err
+			}
+		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // Will scan POST results and determine booking success or failure.
 // bool return describes whether we should retry booking at a later time.
-func scanResponseForSnipeResult(r io.Reader) (bool, error) {
+func scanResponseForSnipeResult(r io.Reader) (*time.Duration, error) {
 	tooEarly, _ := regexp.Compile(`You must wai[l-t]`)
 	notAvailable, _ := regexp.Compile(`booking you requested is no longer available`)
 	maxBookings, _ := regexp.Compile(`You have reached the maximum number of bookings`)
@@ -164,36 +135,103 @@ func scanResponseForSnipeResult(r io.Reader) (bool, error) {
 			fmt.Printf("[sRFSR]: %s\n", line)
 		}
 
+		// No need to retry, no error
 		if snipeSuccess.FindString(line) != "" {
-			return false, nil
+			return nil, nil
 		}
+
+		// Booking too far in the future to worry about retying currently
 		if tooFarAhead.FindString(line) != "" {
-			return true, ErrTooEarlyToRegisterTeeTime
+			fmt.Printf("Too far ahead?\n")
+			return nil, ErrTooEarlyToRegisterTeeTime
 		}
+
+		// Booking will opening shortly, we will find out when and retry then.
 		if tooEarly.FindString(line) != "" {
+			fmt.Printf("Too early?\n")
 			// This response alludes to an unlock time within 24 hours. We will parse that time out and schedule booking for that time.
 			unlockTime := regexp.MustCompile(`start booking for (?P<Datetime>.*am|.*pm)[.]`)
 			res := unlockTime.FindStringSubmatch(line)
+			fmt.Printf("Res: %v\n", res)
 			if len(res) == 2 {
 				const layout = "Monday, January 2, 2006 until 3:04 pm"
 				checkTime, terr := time.ParseInLocation(layout, res[1], time.Local)
 				if terr != nil {
-					return false, terr
+					fmt.Printf("TTerr: %v\n", terr)
+					return nil, terr
 				}
-				// Have the unlock time in local time zone
-				fmt.Printf("CheckTime: %s\n", checkTime)
-				// TODO get difference in time and set retry for that time period
-				fmt.Printf("NowTime: %s\n", time.Now().Local())
+				updatedTime := checkTime.Local().Add((-7 * (time.Hour * 24)) + (time.Hour * 3)) // TODO Figure out where the timezone shenanigans are hapopening
+				timeDiff := updatedTime.Sub(time.Now())
+				fmt.Printf("CheckTime: %v\n", updatedTime)
+				fmt.Printf("Nowtime: %v\n", time.Now())
+				fmt.Printf("tDiff: %v\n", timeDiff)
+				if timeDiff.Minutes() <= 5 {
+					fmt.Println("Return with timeDiff")
+					return &timeDiff, ErrTooEarlyToRegisterTeeTime
+				} else {
+					fmt.Println("Return without timeDiff")
+					return nil, ErrTooEarlyToRegisterTeeTime
+				}
 			}
-			return true, ErrTooEarlyToRegisterTeeTime
+
+			return nil, ErrTooEarlyToRegisterTeeTime
 		}
+
+		// Booking not currently available, might be able to get it at a later time but well let retries handle that
 		if notAvailable.FindString(line) != "" {
-			return true, ErrBookingNotAvailable
+			return nil, ErrBookingNotAvailable
 		}
+
+		// We've alreayd booked a time that would conflict with this booking, nothing left to do here
 		if maxBookings.FindString(line) != "" {
-			return false, ErrTeeTimeAlreadyBooked
+			return nil, ErrTeeTimeAlreadyBooked
 		}
 	}
 
-	return false, nil
+	return nil, nil
+}
+
+func constructForm(teeTime *models.TeeTime, snipeTime time.Time) (*url.Values, error) {
+	nowTime := time.Now()
+	unixT := nowTime.UnixMilli()
+
+	formatTeeTime := snipeTime.Format("2006-01-02;15:04")
+	fmt.Printf("Attempting time: %s\n", formatTeeTime)
+	parts := strings.Split(formatTeeTime, ";")
+	if len(parts) != 2 {
+		return nil, errors.New("Request time could not be parsed properly into a tee time")
+	}
+
+	form := url.Values{}
+	form.Set(fmt.Sprintf("%d-0", unixT), "Tyler Fancy")
+	for i := 1; i < int(teeTime.NumPlayers); i++ {
+		form.Set(fmt.Sprintf("%d-%d", unixT, i), "Member")
+	}
+	form.Set("BackTarget", "com.teeon.teesheet.servlets.golfersection.WebBookingPlayerEntry")
+	form.Set("CaptureCreditBluff", "false")
+	form.Set("CaptureCreditMoneris", "false")
+	form.Set("Carts", fmt.Sprintf("%d", teeTime.NumCarts))
+	form.Set("CourseCode", "AVON")
+	form.Set("Date", parts[0])
+	form.Set("FromSpecials", "false")
+	form.Set("Holes", fmt.Sprintf("%d", teeTime.NumHoles))
+	form.Set("LockerString", "Tyler Fancy (PUB281288)1|0")
+	form.Set("Name0", "Tyler Fancy")
+	form.Set("PlayerID0", "AVON3971")
+	for i := 1; i < int(teeTime.NumPlayers); i++ {
+		form.Set(fmt.Sprintf("Name%d", i), "Member")
+		form.Set(fmt.Sprintf("PlayerID%d", i), "")
+	}
+	form.Set("NineCode", "F")
+	form.Set("Players", fmt.Sprintf("%d", teeTime.NumPlayers))
+	form.Set("Referrer", "avonvalleygolf.com")
+	form.Set("Ride0", "false")
+	form.Set("Ride1", "false")
+	form.Set("Ride2", "false")
+	form.Set("Ride3", "false") // TODO Handle this based on 12 carts?
+	form.Set("ShotgunID", "")
+	form.Set("Time", parts[1])
+	form.Set("UnlockTime", fmt.Sprintf("AVON|F|%s|%s|B|10:03|99", parts[0], parts[1]))
+
+	return &form, nil
 }

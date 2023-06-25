@@ -76,6 +76,7 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 		NumCarts:      uint(parsedCarts),
 		NumPlayers:    uint(parsedPlayers),
 		NumHoles:      uint(parsedHoles),
+		Retries:       uint(0),
 	}
 
 	existingBooking, err := models.GetTeeTimeByBooking(val)

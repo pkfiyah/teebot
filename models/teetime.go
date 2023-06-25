@@ -17,6 +17,8 @@ type TeeTime struct {
 	NumPlayers    uint
 	NumCarts      uint
 	NumHoles      uint
+	Retries       uint
+	RedKey        string
 }
 
 var ctx = context.Background()
