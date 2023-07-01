@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -13,14 +14,14 @@ import (
 	"time"
 
 	"github.com/pkfiyah/tee1000/models"
-	"github.com/redis/go-redis/v9"
 )
 
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 type TeeOnClient struct {
-	client *http.Client
-	jar    *cookiejar.Jar
-	redis  *redis.Client
-	name   string
+	client HTTPClient
 }
 
 const teeOnSignInUrl string = "https://www.tee-on.com/PubGolf/servlet/com.teeon.teesheet.servlets.ajax.CheckSignInCloudAjax"
@@ -33,33 +34,24 @@ var ErrTeeTimeAlreadyBooked = errors.New("A tee time has already been booked for
 const debug bool = true
 
 func NewTeeOnClient() (*TeeOnClient, error) {
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     "teebot-redis-1:6379",
-		Password: "",
-		DB:       0,
-	})
 	toClient := TeeOnClient{}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, err
 	}
-	toClient.jar = jar
 	toClient.client = &http.Client{
 		Jar: jar,
 	}
-	toClient.redis = redisClient
-	toClient.name = "test"
 
 	return &toClient, nil
 }
 
-func (toc *TeeOnClient) TeeOnSignIn() error {
-
+func (toc *TeeOnClient) TeeOnSignIn(loginInfo *models.PlayerInfo) error {
 	form := url.Values{}
-	form.Set("Username", "Tylerfancy")
-	form.Set("Password", "MansoN666")
+	form.Set("Username", loginInfo.User.Username)
+	form.Set("Password", loginInfo.User.Password)
+	form.Set("CourseCode", loginInfo.Course.CourseCode)
 	form.Set("SaveSignIn", "false")
-	form.Set("CourseCode", "")
 
 	req, err := http.NewRequest("POST", teeOnSignInUrl, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -102,7 +94,7 @@ func (toc *TeeOnClient) TeeOnSnipeTime(teeTime *models.TeeTime) (*time.Duration,
 		defer resp.Body.Close()
 		retryIn, err := scanResponseForSnipeResult(resp.Body)
 
-		// Could be done booking, could be just waiting for a retry on the time
+		// We got a retryIn time, booking will unlock soon
 		if retryIn != nil {
 			return retryIn, err
 		}
@@ -111,6 +103,12 @@ func (toc *TeeOnClient) TeeOnSnipeTime(teeTime *models.TeeTime) (*time.Duration,
 			fmt.Printf("Err during result scan, continuing to next time?: %s\n", err)
 			if err == ErrTooEarlyToRegisterTeeTime || err == ErrTeeTimeAlreadyBooked {
 				return nil, err
+			}
+
+			// Booking not currently available, but can keep retrying to see if it frees up
+			if err == ErrBookingNotAvailable {
+				retryTime := time.Duration(float64(time.Second) * float64(math.Pow(2, float64(teeTime.Retries))))
+				return &retryTime, err
 			}
 		}
 	}
@@ -134,42 +132,33 @@ func scanResponseForSnipeResult(r io.Reader) (*time.Duration, error) {
 			fmt.Printf("[sRFSR]: %s\n", line)
 		}
 
-		// No need to retry, no error
+		// No need to retry, got booking successfully
 		if snipeSuccess.FindString(line) != "" {
 			return nil, nil
 		}
 
-		// Booking too far in the future to worry about retying currently
+		// Booking too far in the future to worry about retrying currently
 		if tooFarAhead.FindString(line) != "" {
-			fmt.Printf("Too far ahead?\n")
 			return nil, ErrTooEarlyToRegisterTeeTime
 		}
 
 		// Booking will opening shortly, we will find out when and retry then.
 		if tooEarly.FindString(line) != "" {
-			fmt.Printf("Too early?\n")
 			// This response alludes to an unlock time within 24 hours. We will parse that time out and schedule booking for that time.
 			unlockTime := regexp.MustCompile(`start booking for (?P<Datetime>.*am|.*pm)[.]`)
 			res := unlockTime.FindStringSubmatch(line)
-			fmt.Printf("Res: %v\n", res)
 			if len(res) == 2 {
-				const layout = "Monday, January 2, 2006 until 3:04 pm"
-				checkTime, terr := time.ParseInLocation(layout, res[1], time.Local)
+				const layout = "Monday, January 02, 2006 until 15:04 pm"
+				parsedUnlockTime, terr := time.ParseInLocation(layout, res[1], time.Local)
 				if terr != nil {
-					fmt.Printf("TTerr: %v\n", terr)
 					return nil, terr
 				}
-				updatedTime := checkTime.Local().Add((-7 * (time.Hour * 24)) + (time.Hour * 3)) // TODO Figure out where the timezone shenanigans are hapopening
-				timeDiff := updatedTime.Sub(time.Now())
-				fmt.Printf("CheckTime: %v\n", updatedTime)
-				fmt.Printf("Nowtime: %v\n", time.Now())
-				fmt.Printf("tDiff: %v\n", timeDiff)
+
+				// date returned is for booking date, but the time is the unlock time. Assuming 7 days booking date difference
+				updatedParsedUnlockTime := parsedUnlockTime.Add((-7 * (time.Hour * 24)))
+				timeDiff := updatedParsedUnlockTime.Sub(time.Now())
 				if timeDiff.Minutes() <= 5 {
-					fmt.Println("Return with timeDiff")
 					return &timeDiff, ErrTooEarlyToRegisterTeeTime
-				} else {
-					fmt.Println("Return without timeDiff")
-					return nil, ErrTooEarlyToRegisterTeeTime
 				}
 			}
 

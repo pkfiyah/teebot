@@ -93,6 +93,8 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 		val = existingBooking
 	}
 
+	val.LastAttemptTime = time.Now().Local()
+
 	err = models.SetTeeTimeWithBooking(r, val)
 	if err != nil {
 		fmt.Printf("Error saving to redis")

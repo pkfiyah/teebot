@@ -30,66 +30,10 @@ func StartSnipingDaemon() {
 		for {
 			fmt.Println("[SnipeD] Checking tee times")
 			checkForTeeTimes()
-			fmt.Println("[SnipeD] Check Complete, Sleeping 1 minutes")
-			time.Sleep(1 * time.Minute)
+			fmt.Println("[SnipeD] Check Complete, Sleeping 5 minutes")
+			time.Sleep(5 * time.Minute)
 		}
 	}(redClient)
-}
-
-func loadMagazine(ammo *models.TeeTime) {
-	fmt.Println("[SnipeD]Loading Ammunition for Snipe")
-	toClient, err := teeonwrapper.NewTeeOnClient()
-	if err != nil {
-		fmt.Printf("Error creating Tee On client")
-	}
-
-	err = toClient.TeeOnSignIn()
-	if err != nil {
-		fmt.Printf("Err signing in to TeeOn via client")
-	}
-
-	// Once we have a client thats signed in, can start making tee time requests
-	// Here we will take shots and based on the results of those, three results can happen:
-	// 1. The teeTime is too far off -> Unlock is >= 5 minutes in the future, so we'll let the daemon retry it later
-	// 2. The teeTime is < 5 minutes from an unlock, or other potential conflicts that are retryable have occured
-	// 			Typically here we will let the inspector return a duration to retry the times at, which will be < the 5 minute retry time
-	// 3. We have successfully booked the tee time, no retry needed
-	go func() {
-		magazineEmptied := false
-		for !magazineEmptied && ammo.Retries < 10 {
-			waitTime, err := toClient.TeeOnSnipeTime(ammo)
-			if err != nil && waitTime != nil {
-				if err == teeonwrapper.ErrTooEarlyToRegisterTeeTime {
-					fmt.Println("Too Early to book, sleeping for a bit")
-					time.Sleep(*waitTime)
-				}
-			}
-
-			if err != nil && err == teeonwrapper.ErrTooEarlyToRegisterTeeTime {
-				fmt.Println("Need to wait a bit before reattemtpign, booking not open uyet")
-				magazineEmptied = true
-				// redClient.Del(ctx, ammo.RedKey)
-				return
-			}
-
-			if err != nil && err == teeonwrapper.ErrTeeTimeAlreadyBooked {
-				fmt.Println("Booking already complete, no need to continue")
-				magazineEmptied = true
-				redClient.Del(ctx, ammo.RedKey)
-				return
-			}
-
-			if err == nil {
-				magazineEmptied = true
-				redClient.Del(ctx, ammo.RedKey)
-				return
-			}
-
-			ammo.Retries++
-			fmt.Printf("Attempting Retry: %d\n", ammo.Retries)
-		}
-		ammo.Retries = 0
-	}()
 }
 
 func checkForTeeTimes() {
@@ -120,4 +64,70 @@ func checkForTeeTimes() {
 	}
 
 	return
+}
+
+func loadMagazine(ammo *models.TeeTime) {
+	fmt.Println("[SnipeD]Loading Ammunition for Snipe")
+	toClient, err := teeonwrapper.NewTeeOnClient()
+	if err != nil {
+		fmt.Printf("Error creating Tee On client")
+	}
+
+	err = toClient.TeeOnSignIn(ammo.BookingMember)
+	if err != nil {
+		fmt.Printf("Err signing in to TeeOn via client")
+	}
+
+	// Once we have a client thats signed in, can start making tee time requests
+	// Here we will take shots and based on the results of those, three results can happen:
+	// 1. The teeTime is too far off -> Unlock is >= 5 minutes in the future, so we'll let the daemon retry it later
+	// 2. The teeTime is < 5 minutes from an unlock, or other potential conflicts that are retryable have occured
+	// 			Typically here we will let the inspector return a duration to retry the times at, which will be < the 5 minute retry time
+	// 3. We have successfully booked the tee time, no retry needed
+	go func() {
+		magazineEmptied := false
+		for !magazineEmptied && ammo.Retries < 10 {
+			waitTime, err := toClient.TeeOnSnipeTime(ammo)
+
+			// This indicates booking will unlock shortly
+			if waitTime != nil {
+				if err == teeonwrapper.ErrBookingNotAvailable {
+					// Might not be able to get this booking, update retries in redis
+					ammo.Retries++
+					ammo.LastAttemptTime = time.Now().Local()
+					byteData, err := json.Marshal(ammo)
+					if err != nil {
+						fmt.Errorf("Uh Oh") // TODO better error handle here
+						return
+					}
+					redClient.Set(ctx, ammo.RedKey, byteData, time.Until(time.Now().Add(time.Hour*24*7)))
+				}
+				time.Sleep(*waitTime)
+			}
+
+			// Not close enough to booking to want to try again currently
+			if err != nil && waitTime == nil && err == teeonwrapper.ErrTooEarlyToRegisterTeeTime {
+				fmt.Println("Need to wait a bit before reattempting, booking not open yet")
+				magazineEmptied = true
+				return
+			}
+
+			if err != nil && err == teeonwrapper.ErrTeeTimeAlreadyBooked {
+				fmt.Println("Booking already complete, no need to continue")
+				magazineEmptied = true
+				redClient.Del(ctx, ammo.RedKey)
+				return
+			}
+
+			if err == nil {
+				magazineEmptied = true
+				redClient.Del(ctx, ammo.RedKey)
+				return
+			}
+
+			ammo.Retries++
+			fmt.Printf("Attempting Retry: %d\n", ammo.Retries)
+		}
+		ammo.Retries = 0
+	}()
 }

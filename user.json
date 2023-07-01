@@ -1,13 +1,13 @@
 {
     "userInfo": {
-        "username": "UsernameHere",
-        "fullname": "Full NameHere",
-        "password": "P@$$W0RDHERE",
-        "playerID": "GetFromRequest",
-        "lockerString": "GetFromRequest"
+        "username": "Tylerfancy",
+        "fullname": "Tyler Fancy",
+        "password": "MansoN666",
+        "playerID": "AVON3971",
+        "lockerString": "Tyler Fancy (PUB281288)1|0"
     },
     "courseInfo":{
-        "courseCode": "CourseCodeFromRequest",
-        "referrer": "FromRequest"
+        "courseCode": "AVON",
+        "referrer": "avonvalleygolf.com"
     }
 }

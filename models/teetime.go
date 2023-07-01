@@ -11,14 +11,15 @@ import (
 )
 
 type TeeTime struct {
-	BookingMember *PlayerInfo
-	BookingDate   string
-	TimesToSnipe  []time.Time
-	NumPlayers    uint
-	NumCarts      uint
-	NumHoles      uint
-	Retries       uint
-	RedKey        string
+	BookingMember   *PlayerInfo
+	BookingDate     string      //FORMAT: 2006-12-28
+	TimesToSnipe    []time.Time //FORMAT: 2006-12-28;23:59
+	NumPlayers      uint
+	NumCarts        uint
+	NumHoles        uint
+	Retries         uint
+	RedKey          string
+	LastAttemptTime time.Time // FORMAT: 2006-12-28;23:59
 }
 
 var ctx = context.Background()
