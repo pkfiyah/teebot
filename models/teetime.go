@@ -11,7 +11,7 @@ import (
 )
 
 type TeeTime struct {
-	BookingMember string
+	BookingMember *PlayerInfo
 	BookingDate   string
 	TimesToSnipe  []time.Time
 	NumPlayers    uint
@@ -53,7 +53,7 @@ func SetTeeTimeWithBooking(r *http.Request, tT *TeeTime) error {
 	if err != nil {
 		return fmt.Errorf("Could not marshal data")
 	}
-	err = redClient.Set(r.Context(), fmt.Sprintf("TeeTime:%s/%s", tT.BookingMember, tT.BookingDate), jsonTeeTime, expTime).Err()
+	err = redClient.Set(r.Context(), fmt.Sprintf("TeeTime:%s/%s", tT.BookingMember.User.Fullname, tT.BookingDate), jsonTeeTime, expTime).Err()
 	if err != nil {
 		fmt.Printf("Err occurred saving tee time to Redis: %v\n", err)
 	}
@@ -61,5 +61,5 @@ func SetTeeTimeWithBooking(r *http.Request, tT *TeeTime) error {
 }
 
 func getRedisKey(tT *TeeTime) string {
-	return fmt.Sprintf("TeeTime:%s/%s", tT.BookingMember, tT.BookingDate)
+	return fmt.Sprintf("TeeTime:%s/%s", tT.BookingMember.User.Fullname, tT.BookingDate)
 }

@@ -78,7 +78,6 @@ func (toc *TeeOnClient) TeeOnSignIn() error {
 
 func (toc *TeeOnClient) TeeOnSnipeTime(teeTime *models.TeeTime) (*time.Duration, error) {
 	for _, snipeTime := range teeTime.TimesToSnipe {
-
 		form, err := constructForm(teeTime, snipeTime)
 		if err != nil {
 			// Critical Parse Error
@@ -196,14 +195,13 @@ func constructForm(teeTime *models.TeeTime, snipeTime time.Time) (*url.Values, e
 	unixT := nowTime.UnixMilli()
 
 	formatTeeTime := snipeTime.Format("2006-01-02;15:04")
-	fmt.Printf("Attempting time: %s\n", formatTeeTime)
 	parts := strings.Split(formatTeeTime, ";")
 	if len(parts) != 2 {
 		return nil, errors.New("Request time could not be parsed properly into a tee time")
 	}
 
 	form := url.Values{}
-	form.Set(fmt.Sprintf("%d-0", unixT), "Tyler Fancy")
+	form.Set(fmt.Sprintf("%d-0", unixT), teeTime.BookingMember.User.Fullname)
 	for i := 1; i < int(teeTime.NumPlayers); i++ {
 		form.Set(fmt.Sprintf("%d-%d", unixT, i), "Member")
 	}
@@ -211,27 +209,28 @@ func constructForm(teeTime *models.TeeTime, snipeTime time.Time) (*url.Values, e
 	form.Set("CaptureCreditBluff", "false")
 	form.Set("CaptureCreditMoneris", "false")
 	form.Set("Carts", fmt.Sprintf("%d", teeTime.NumCarts))
-	form.Set("CourseCode", "AVON")
+	form.Set("CourseCode", teeTime.BookingMember.Course.CourseCode)
 	form.Set("Date", parts[0])
 	form.Set("FromSpecials", "false")
 	form.Set("Holes", fmt.Sprintf("%d", teeTime.NumHoles))
-	form.Set("LockerString", "Tyler Fancy (PUB281288)1|0")
-	form.Set("Name0", "Tyler Fancy")
-	form.Set("PlayerID0", "AVON3971")
+	form.Set("LockerString", teeTime.BookingMember.User.LockerString)
+	form.Set("Name0", teeTime.BookingMember.User.Fullname)
+	form.Set("PlayerID0", teeTime.BookingMember.User.PlayerID)
 	for i := 1; i < int(teeTime.NumPlayers); i++ {
 		form.Set(fmt.Sprintf("Name%d", i), "Member")
 		form.Set(fmt.Sprintf("PlayerID%d", i), "")
 	}
 	form.Set("NineCode", "F")
 	form.Set("Players", fmt.Sprintf("%d", teeTime.NumPlayers))
-	form.Set("Referrer", "avonvalleygolf.com")
+	form.Set("Referrer", teeTime.BookingMember.Course.Referrer)
+
 	form.Set("Ride0", "false")
 	form.Set("Ride1", "false")
 	form.Set("Ride2", "false")
 	form.Set("Ride3", "false") // TODO Handle this based on 12 carts?
 	form.Set("ShotgunID", "")
 	form.Set("Time", parts[1])
-	form.Set("UnlockTime", fmt.Sprintf("AVON|F|%s|%s|B|10:03|99", parts[0], parts[1]))
+	form.Set("UnlockTime", fmt.Sprintf("%s|F|%s|%s|B|10:03|99", teeTime.BookingMember.Course.CourseCode, parts[0], parts[1]))
 
 	return &form, nil
 }

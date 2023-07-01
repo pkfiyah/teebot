@@ -28,16 +28,16 @@ var redClient = redis.NewClient(&redis.Options{
 func StartSnipingDaemon() {
 	go func(rClient *redis.Client) {
 		for {
-			fmt.Println("[SDaemon] Checking tee times")
+			fmt.Println("[SnipeD] Checking tee times")
 			checkForTeeTimes()
-			fmt.Println("[SDaemon] Check Complete, Sleeping 5 minutes")
-			time.Sleep(5 * time.Minute)
+			fmt.Println("[SnipeD] Check Complete, Sleeping 1 minutes")
+			time.Sleep(1 * time.Minute)
 		}
 	}(redClient)
 }
 
 func loadMagazine(ammo *models.TeeTime) {
-	fmt.Println("Daemon Loading Ammunition for Snipe")
+	fmt.Println("[SnipeD]Loading Ammunition for Snipe")
 	toClient, err := teeonwrapper.NewTeeOnClient()
 	if err != nil {
 		fmt.Printf("Error creating Tee On client")
@@ -96,7 +96,7 @@ func checkForTeeTimes() {
 	var cursor uint64
 	iter := redClient.Scan(ctx, cursor, "TeeTime:*", 0).Iterator()
 	for iter.Next(ctx) {
-		fmt.Printf("Tee time Found: %v\n", iter.Val())
+		fmt.Printf("[SnipeD] Tee Time Found: %v\n", iter.Val())
 		res := redClient.Get(ctx, iter.Val())
 
 		// Check sniping times for found results

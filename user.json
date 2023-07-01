@@ -1,0 +1,13 @@
+{
+    "userInfo": {
+        "username": "UsernameHere",
+        "fullname": "Full NameHere",
+        "password": "P@$$W0RDHERE",
+        "playerID": "GetFromRequest",
+        "lockerString": "GetFromRequest"
+    },
+    "courseInfo":{
+        "courseCode": "CourseCodeFromRequest",
+        "referrer": "FromRequest"
+    }
+}

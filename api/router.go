@@ -69,8 +69,10 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	playerInfo, err := models.GetPlayerInfo()
+
 	val := &models.TeeTime{
-		BookingMember: "Tylerfancy",
+		BookingMember: playerInfo,
 		BookingDate:   bookingDate[0],
 		TimesToSnipe:  []time.Time{parsedTeeTime},
 		NumCarts:      uint(parsedCarts),
