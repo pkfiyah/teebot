@@ -47,9 +47,7 @@ func GetTeeTimeByBooking(tT *TeeTime) (*TeeTime, error) {
 }
 
 func SetTeeTimeWithBooking(r *http.Request, tT *TeeTime) error {
-
-	// TODO Expire immediately after tee time has passed
-	expTime := time.Until(time.Now().Add(time.Hour * 24 * 7))
+	expTime := time.Until(tT.TimesToSnipe[0].Add(time.Duration(24 * time.Hour)))
 	jsonTeeTime, err := json.Marshal(tT)
 	if err != nil {
 		return fmt.Errorf("Could not marshal data")
