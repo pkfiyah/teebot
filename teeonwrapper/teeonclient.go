@@ -31,7 +31,7 @@ var ErrTooEarlyToRegisterTeeTime = errors.New("Request too early, must wait for 
 var ErrBookingNotAvailable = errors.New("Booking not available")
 var ErrTeeTimeAlreadyBooked = errors.New("A tee time has already been booked for this date")
 
-const debug bool = true
+const debug bool = false
 
 func NewTeeOnClient() (*TeeOnClient, error) {
 	toClient := TeeOnClient{}
@@ -148,18 +148,22 @@ func scanResponseForSnipeResult(r io.Reader) (*time.Duration, error) {
 			unlockTime := regexp.MustCompile(`start booking for (?P<Datetime>.*am|.*pm)[.]`)
 			res := unlockTime.FindStringSubmatch(line)
 			if len(res) == 2 {
-				const layout = "Monday, January 02, 2006 until 15:04 pm"
-				parsedUnlockTime, terr := time.ParseInLocation(layout, res[1], time.Local)
+				const layout = "Monday, January 2, 2006 until 15:04 pm"
+				loc, _ := time.LoadLocation("America/Halifax")
+				parsedUnlockTime, terr := time.ParseInLocation(layout, res[1], loc)
+				fmt.Printf("UNLCOK TIME:%s\n", parsedUnlockTime)
 				if terr != nil {
 					return nil, terr
 				}
 
 				// date returned is for booking date, but the time is the unlock time. Assuming 7 days booking date difference
 				updatedParsedUnlockTime := parsedUnlockTime.Add((-7 * (time.Hour * 24)))
-				timeDiff := updatedParsedUnlockTime.Sub(time.Now())
-				if timeDiff.Minutes() <= 5 {
-					return &timeDiff, ErrTooEarlyToRegisterTeeTime
-				}
+				fmt.Printf("UPDATEDF UNLCOK TIME:%s\n", updatedParsedUnlockTime)
+				fmt.Printf("AKTNOW: %s\n", time.Now().In(loc))
+				fmt.Printf("SUB: %s\n", updatedParsedUnlockTime.Sub(time.Now().In(loc)))
+				timeDiff := updatedParsedUnlockTime.Sub(time.Now().In(loc))
+
+				return &timeDiff, ErrTooEarlyToRegisterTeeTime
 			}
 
 			return nil, ErrTooEarlyToRegisterTeeTime

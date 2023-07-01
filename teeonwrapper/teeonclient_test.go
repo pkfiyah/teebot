@@ -109,7 +109,7 @@ type HttpClientMockTooEarly struct{}
 func (c HttpClientMockTooEarly) Do(req *http.Request) (*http.Response, error) {
 	// Getting time in a format return from Tee On from Avon valley, unlock time of 7 days prior at 6pm
 	// Will return current time + 7 days and 2 hours
-	formatTime := time.Now().Add((time.Hour * 24 * 7) + time.Hour*2).Format("Monday, January 02, 2006 until 15:04 pm")
+	formatTime := time.Now().Add((time.Hour * 24 * 7) + time.Hour*2).Format("Monday, January 2, 2006 until 15:04 pm")
 
 	return &http.Response{
 		StatusCode: 200,

@@ -94,6 +94,7 @@ func addTeeTime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	val.LastAttemptTime = time.Now().Local()
+	val.NextAttemptTime = time.Now().Local()
 
 	err = models.SetTeeTimeWithBooking(r, val)
 	if err != nil {

@@ -56,8 +56,13 @@ func checkForTeeTimes() {
 			return
 		}
 		parsedTeeTime.RedKey = iter.Val()
-		// Load found teeTime in for firing
-		loadMagazine(parsedTeeTime)
+		fmt.Printf("NextTime: %s", parsedTeeTime.NextAttemptTime)
+		fmt.Printf("NowTime: %s", time.Now().Local())
+		fmt.Printf("CheckTime: %s", time.Now().Local().Sub(parsedTeeTime.NextAttemptTime))
+		if time.Now().Local().Sub(parsedTeeTime.NextAttemptTime) > 0 {
+			// Load found teeTime in for firing
+			loadMagazine(parsedTeeTime)
+		}
 	}
 	if err := iter.Err(); err != nil {
 		panic(err)
@@ -91,6 +96,7 @@ func loadMagazine(ammo *models.TeeTime) {
 
 			// This indicates booking will unlock shortly
 			if waitTime != nil {
+				fmt.Printf("Err: %s", err)
 				if err == teeonwrapper.ErrBookingNotAvailable {
 					// Might not be able to get this booking, update retries in redis
 					ammo.Retries++
@@ -102,7 +108,27 @@ func loadMagazine(ammo *models.TeeTime) {
 					}
 					redClient.Set(ctx, ammo.RedKey, byteData, time.Until(time.Now().Add(time.Hour*24*7)))
 				}
-				time.Sleep(*waitTime)
+				fmt.Printf("CheckInn WaitTime:%s\n", *waitTime)
+				fmt.Printf("CheckInn Duyraitions:%s\n", time.Duration(time.Minute*5))
+				fmt.Printf("Resujhtl:%v\n", *waitTime < time.Duration(time.Minute*5))
+				if err != teeonwrapper.ErrBookingNotAvailable && *waitTime < time.Duration(time.Minute*5) {
+					fmt.Printf("WERWERWR")
+					time.Sleep(*waitTime)
+				}
+				if err != teeonwrapper.ErrBookingNotAvailable && *waitTime >= time.Duration(time.Minute*5) {
+					fmt.Printf("FGFGHFGJHGF")
+					loc, _ := time.LoadLocation("America/Halifax")
+					ammo.LastAttemptTime = time.Now().In(loc)
+					fmt.Printf("Wait this long: %v\n", *waitTime-time.Duration(time.Second*30))
+					ammo.NextAttemptTime = time.Now().In(loc).Add(*waitTime - time.Duration(time.Second*30))
+					ammo.Retries = 0
+					byteData, err := json.Marshal(ammo)
+					if err != nil {
+						fmt.Errorf("Uh Oh") // TODO better error handle here
+						return
+					}
+					redClient.Set(ctx, ammo.RedKey, byteData, time.Until(time.Now().Add(time.Hour*24*7)))
+				}
 			}
 
 			// Not close enough to booking to want to try again currently
@@ -119,6 +145,7 @@ func loadMagazine(ammo *models.TeeTime) {
 				return
 			}
 
+			// TODO currently can get here if we have an error thats not captured, will purge these entries. Clean this part up
 			if err == nil {
 				magazineEmptied = true
 				redClient.Del(ctx, ammo.RedKey)
@@ -128,6 +155,5 @@ func loadMagazine(ammo *models.TeeTime) {
 			ammo.Retries++
 			fmt.Printf("Attempting Retry: %d\n", ammo.Retries)
 		}
-		ammo.Retries = 0
 	}()
 }

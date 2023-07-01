@@ -20,6 +20,7 @@ type TeeTime struct {
 	Retries         uint
 	RedKey          string
 	LastAttemptTime time.Time // FORMAT: 2006-12-28;23:59
+	NextAttemptTime time.Time // FORMAT: 2006-12-28;23:59
 }
 
 var ctx = context.Background()
